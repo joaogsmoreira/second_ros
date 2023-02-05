@@ -5,20 +5,20 @@ This package contains the second model that performs 3D object detection from po
 ![Video_Result2](docs/results.gif)
 
 ---
-## Setting up the environment
+## Environment
 
-### General Environment
+### General
 
 - Ubuntu 20.04
 - ROS Noetic
 
-### Compute Environment
+### Compute
 - NVIDIA GeForce 3060Ti
 - Driver Version 515.86.01
 - CUDA 11.1
 - CUDDN 8.0.5
 
-### SECOND Environment
+### SECOND Model
 Note: It is higly advised to use anaconda/miniconda as an environment manager in this project.
 
 Create the environment from the environment.yml file:
@@ -30,9 +30,7 @@ Although all dependencies should be covered in the environment.yaml file, necess
 Please note that this repo requires Python 3.6+. If you are using ROS Melodic, please build ROS from source to ensure rospy runs with Python3.
 
 ### SpConv: PyTorch Spatially Sparse Convolution Library
-For the complete version of the installation, please refer to [spconv.](https://github.com/traveller59/second.pytorch)
 
-Note: this repo was implemented using version 1.2.1.
 ``` 
 $ sudo apt-get install libboost-all-dev
 $ cd spconv
@@ -40,6 +38,8 @@ $ python setup.py bdist_wheel
 $ pip install dist/spconv-1.2.1-*
 ```
 
+Note: this repo was implemented using version 1.2.1.
+For the complete overview of SpConv, please visit [spconv.](https://github.com/traveller59/second.pytorch)
 
 ## Setting up the package
 
