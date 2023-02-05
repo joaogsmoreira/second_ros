@@ -81,7 +81,7 @@ def get_downsample_factor(model_config):
 
 
 if __name__ == "__main__":
-    config_path = "/home/indra/traveller/second.pytorch/second/configs/all.fhd.config"
+    config_path = "/home/johny/catkin_ws/src/second_ros/second.pytorch/second/configs/all.fhd.config"
     config = pipeline_pb2.TrainEvalPipelineConfig()
 
     with open(config_path, "r") as f:

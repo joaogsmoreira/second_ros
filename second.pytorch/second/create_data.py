@@ -2,7 +2,7 @@ import copy
 from pathlib import Path
 import pickle
 import sys
-sys.path.append("/home/indra/traveller/second.pytorch")
+sys.path.append("/home/johny/catkin_ws/src/second_ros/second.pytorch")
 import fire
 
 import second.data.kitti_dataset as kitti_ds

@@ -6,7 +6,7 @@ import pickle
 import time
 from pathlib import Path
 import sys
-sys.path.append("/home/indra/traveller/second.pytorch")
+sys.path.append("/home/johny/catkin_ws/src/second_ros/second.pytorch")
 import torch
 from google.protobuf import text_format
 #from second.utils import simplevis
@@ -16,8 +16,7 @@ from second.utils import config_tool
 
 
 if __name__ == '__main__':
-    #config_path = "/home/indra/traveller/second.pytorch/second/configs/car.fhd.config"
-    config_path = "/home/indra/traveller/second.pytorch/second/configs/all.fhd.config"
+    config_path = "/home/johny/catkin_ws/src/second_ros/second.pytorch/second/configs/all.fhd.config"
     config = pipeline_pb2.TrainEvalPipelineConfig()
     with open(config_path, "r") as f:
         proto_str = f.read()
@@ -28,8 +27,7 @@ if __name__ == '__main__':
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-    #ckpt_path = "/home/indra/Documents/pretrained_models_v1.5/car_onestage/voxelnet-27855.tckpt"
-    ckpt_path = "/home/indra/Documents/second_models/voxelnet-99040.tckpt"
+    ckpt_path = "/home/johny/catkin_ws/src/second_ros/trained_models/voxelnet-99040.tckpt"
     net = build_network(model_cfg).to(device).eval()
     net.load_state_dict(torch.load(ckpt_path))
     target_assigner = net.target_assigner
@@ -40,7 +38,7 @@ if __name__ == '__main__':
     feature_map_size = grid_size[:2] // config_tool.get_downsample_factor(model_cfg)
     feature_map_size = [*feature_map_size, 1][::-1]
 
-    v_path = '/home/indra/Documents/Kitti/object/training/velodyne_reduced/000001.bin'
+    v_path = '/home/johny/Kitti/training/velodyne_reduced/000001.bin'
     anchors = target_assigner.generate_anchors(feature_map_size)["anchors"]
     anchors = torch.tensor(anchors, dtype=torch.float32, device=device)
     anchors = anchors.view(1, -1, 7)
