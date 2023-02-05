@@ -2,6 +2,7 @@
 
 This package contains the second model that performs 3D object detection from pointcloud data.
 
+
 ![Video_Result2](docs/results.gif)
 
 ---
@@ -63,4 +64,7 @@ $ roslaunch second_ros second_kitti.launch
 ```
 
 ## Licenses and References
-I referenced original implementation of [second.pytorch](https://github.com/traveller59/second.pytorch) which is under MIT License
+Most of the code is from
+[SECOND Pytorch model](https://github.com/traveller59/second.pytorch), [Voxelnet ROS Implementation](https://github.com/tigerk0430/voxelnet_ros) and [Second ROS](https://github.com/indra4837/second_ros). Special thanks to [@traveller59](https://github.com/traveller59), [@qianguih](https://github.com/qianguih) and [@indra4837](https://github.com/indra4837).
+
+I referenced original implementation of [second.pytorch](https://github.com/traveller59/second.pytorch) which is under MIT License.
