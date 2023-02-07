@@ -51,6 +51,10 @@ $ cd ~/catkin_ws && catkin_make
 $ source devel/setup.bash
 ```
 
+Make sure you also install rviz jsk plugin:
+```
+$ sudo apt install ros-noetic-jsk-rviz-plugins
+```
 ### Download rosbag files for testing
 
 To download rosbags for testing, please follow the [link](https://github.com/tomas789/kitti2bag) to get a kitti.bag for testing.
