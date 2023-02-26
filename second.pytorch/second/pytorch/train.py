@@ -11,6 +11,9 @@ import numpy as np
 import torch
 from google.protobuf import text_format
 
+import sys
+sys.path.append("/home/johny/catkin_ws/src/second_ros/second.pytorch")
+
 import second.data.kitti_common as kitti
 import torchplus
 from second.builder import target_assigner_builder, voxel_builder
