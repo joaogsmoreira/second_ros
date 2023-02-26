@@ -60,9 +60,14 @@ class Second_ROS:
         self.sub_velo = rospy.Subscriber("/point_cloud", PointCloud2, self.lidar_callback, queue_size=1, buff_size=2**24)
         self.pub_bbox = rospy.Publisher("/detections", BoundingBoxArray, queue_size=1)
         
+        # Trained for all classes
         #config_path = rospy.get_param("/config_path", "/home/johny/catkin_ws/src/second_ros/config/all.fhd.config")
         #ckpt_path = rospy.get_param("/ckpt_path", "/home/johny/catkin_ws/src/second_ros/trained_models/voxelnet-99040.tckpt")
-
+        
+        # Trained for pedestrians/cyclists only
+        config_path = rospy.get_param("/config_path", "/home/johny/catkin_ws/src/second_ros/second.pytorch/second/configs/people.fhd.config")
+        ckpt_path = rospy.get_param("/ckpt_path", "/home/johny/catkin_ws/src/second_ros/trained_people/voxelnet-30950.tckpt")
+        
         return config_path, ckpt_path
 
     def inference(self, points):
@@ -123,6 +128,13 @@ class Second_ROS:
         arr_bbox = BoundingBoxArray()
 
         for i in range(num_detections):
+            
+            #if label[i] != 2:               # Checking for pedestrian only
+                #continue
+            if scores[i] < 0.50:          # With confidence level of at least 50%
+                continue
+            
+            rospy.loginfo("Label: %d\tScore: %f", label[i], scores[i])
             bbox = BoundingBox()
 
             bbox.header.frame_id = msg.header.frame_id
