@@ -36,9 +36,7 @@ class Second_ROS:
             text_format.Merge(proto_str, config)
         input_cfg = config.eval_input_reader
         model_cfg = config.model.second
-        #config_tool.change_detection_range_v2(model_cfg, [-50, -50, 50, 50])
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        # device = torch.device("cpu")
 
         self.net = build_network(model_cfg).to(self.device).eval()
         self.net.load_state_dict(torch.load(ckpt_path))
@@ -52,6 +50,7 @@ class Second_ROS:
         self.anchors = target_assigner.generate_anchors(feature_map_size)["anchors"]
         self.anchors = torch.tensor(self.anchors, dtype=torch.float32, device=self.device)
         self.anchors = self.anchors.view(1, -1, 7)
+        print("[second_ros] Model Initialized")
 
 
     def init_ros(self):
@@ -59,6 +58,7 @@ class Second_ROS:
 
         self.sub_velo = rospy.Subscriber("/point_cloud", PointCloud2, self.lidar_callback, queue_size=1, buff_size=2**24)
         self.pub_bbox = rospy.Publisher("/detections", BoundingBoxArray, queue_size=1)
+        self.pub_cloud = rospy.Publisher("/synced_cloud", PointCloud2, queue_size=1)
         
         # Trained for all classes
         #config_path = rospy.get_param("/config_path", "/home/johny/catkin_ws/src/second_ros/config/all.fhd.config")
@@ -73,7 +73,7 @@ class Second_ROS:
     def inference(self, points):
         num_features = 4
         points = points.reshape([-1, num_features])
-        print(points.shape)
+        print("[second_ros] inference points shape: ", points.shape)
         dic = self.voxel_generator.generate(points)
         voxels, coords, num_points = dic['voxels'], dic['coordinates'], dic['num_points_per_voxel']
         coords = np.pad(coords, ((0, 0), (1, 0)), mode='constant', constant_values=0)
@@ -131,8 +131,8 @@ class Second_ROS:
             
             #if label[i] != 2:               # Checking for pedestrian only
                 #continue
-            if scores[i] < 0.50:          # With confidence level of at least 50%
-                continue
+            #if scores[i] < 0.50:          # With confidence level of at least 50%
+                #continue
             
             rospy.loginfo("Label: %d\tScore: %f", label[i], scores[i])
             bbox = BoundingBox()
@@ -161,6 +161,7 @@ class Second_ROS:
         arr_bbox.header.stamp = rospy.Time.now()
         #print("Number of detections: {}".format(num_detections))
         
+        self.pub_cloud.publish(msg)
         self.pub_bbox.publish(arr_bbox)
 
 
@@ -171,4 +172,4 @@ if __name__ == '__main__':
         rospy.spin()
     except KeyboardInterrupt:
         del sec
-        print("Shutting down")
+        print("[second_ros] Shutting down")
