@@ -67,6 +67,13 @@ To download rosbags for testing, please follow the [link](https://github.com/tom
 $ roslaunch second_ros second_kitti.launch
 ```
 
+To change the project verbose level you need to modify rosconsole config file.
+
+Example of adding DEBUG level prints:
+```
+echo log4j.logger.ros.second_ros=DEBUG >> $ROS_ROOT/config/rosconsole.config
+```
+
 ## Licenses and References
 Most of the code is from
 [SECOND Pytorch model](https://github.com/traveller59/second.pytorch), [Voxelnet ROS Implementation](https://github.com/tigerk0430/voxelnet_ros) and [Second ROS](https://github.com/indra4837/second_ros). Special thanks to [@traveller59](https://github.com/traveller59), [@qianguih](https://github.com/qianguih) and [@indra4837](https://github.com/indra4837).
