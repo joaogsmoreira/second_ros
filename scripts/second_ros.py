@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 
 import rospy
-from sensor_msgs.msg import PointCloud2, PointField
+from sensor_msgs.msg import PointCloud2
 from pyquaternion import Quaternion
 import sensor_msgs.point_cloud2 as pc2
-from std_msgs.msg import Header
 from jsk_recognition_msgs.msg import BoundingBox, BoundingBoxArray
 
 import sys
@@ -12,9 +11,6 @@ import time
 sys.path.append("/home/johny/catkin_ws/src/second_ros/second.pytorch")
 
 import numpy as np
-import math
-import pickle
-from pathlib import Path
 
 import torch
 from google.protobuf import text_format
@@ -50,7 +46,7 @@ class Second_ROS:
         self.anchors = target_assigner.generate_anchors(feature_map_size)["anchors"]
         self.anchors = torch.tensor(self.anchors, dtype=torch.float32, device=self.device)
         self.anchors = self.anchors.view(1, -1, 7)
-        print("[second_ros] Model Initialized")
+        rospy.loginfo("[second_ros] Model Initialized")
 
 
     def init_ros(self):
@@ -61,19 +57,19 @@ class Second_ROS:
         self.pub_cloud = rospy.Publisher("/synced_cloud", PointCloud2, queue_size=1)
         
         # Trained for all classes
-        #config_path = rospy.get_param("/config_path", "/home/johny/catkin_ws/src/second_ros/config/all.fhd.config")
-        #ckpt_path = rospy.get_param("/ckpt_path", "/home/johny/catkin_ws/src/second_ros/trained_models/voxelnet-99040.tckpt")
+        config_path = rospy.get_param("/config_path", "/home/johny/catkin_ws/src/second_ros/config/all.fhd.config")
+        ckpt_path = rospy.get_param("/ckpt_path", "/home/johny/catkin_ws/src/second_ros/trained_models/voxelnet-99040.tckpt")
         
         # Trained for pedestrians/cyclists only
-        config_path = rospy.get_param("/config_path", "/home/johny/catkin_ws/src/second_ros/second.pytorch/second/configs/people.fhd.config")
-        ckpt_path = rospy.get_param("/ckpt_path", "/home/johny/catkin_ws/src/second_ros/trained_people/voxelnet-30950.tckpt")
+        #config_path = rospy.get_param("/config_path", "/home/johny/catkin_ws/src/second_ros/second.pytorch/second/configs/people.fhd.config")
+        #ckpt_path = rospy.get_param("/ckpt_path", "/home/johny/catkin_ws/src/second_ros/trained_people/voxelnet-30950.tckpt")
         
         return config_path, ckpt_path
 
     def inference(self, points):
         num_features = 4
         points = points.reshape([-1, num_features])
-        print("[second_ros] inference points shape: ", points.shape)
+        rospy.logdebug("[second_ros] inference points shape: ", points.shape)
         dic = self.voxel_generator.generate(points)
         voxels, coords, num_points = dic['voxels'], dic['coordinates'], dic['num_points_per_voxel']
         coords = np.pad(coords, ((0, 0), (1, 0)), mode='constant', constant_values=0)
@@ -100,12 +96,8 @@ class Second_ROS:
     def lidar_callback(self, msg):
         """ Captures pointcloud data and feed into second model for inference """
 
-        #arr_box = BoundingBoxArray()
-
-        pcl_msg = pc2.read_points(msg, skip_nans=False, field_names=("x", "y", "z","intensity","ring"))
+        pcl_msg = pc2.read_points(msg, skip_nans=False, field_names=("x", "y", "z", "intensity", "ring"))
         np_p = np.array(list(pcl_msg), dtype=np.float32)
-        #print("np_p shape: ", np_p.shape)
-        #np_p = np.delete(np_p, -1, 1)  #  delete "ring" field
         
         # convert to xyzi point cloud
         x = np_p[:, 0].reshape(-1)
@@ -129,12 +121,13 @@ class Second_ROS:
 
         for i in range(num_detections):
             
-            #if label[i] != 2:               # Checking for pedestrian only
-                #continue
+            if label[i] != 2:               # Checking for pedestrian only
+                continue
             #if scores[i] < 0.50:          # With confidence level of at least 50%
                 #continue
             
-            rospy.loginfo("Label: %d\tScore: %f", label[i], scores[i])
+            rospy.logdebug("Label: %d\tScore: %f", label[i], scores[i])
+            
             bbox = BoundingBox()
 
             bbox.header.frame_id = msg.header.frame_id
@@ -159,7 +152,7 @@ class Second_ROS:
         
         arr_bbox.header.frame_id = msg.header.frame_id
         arr_bbox.header.stamp = rospy.Time.now()
-        #print("Number of detections: {}".format(num_detections))
+        #rospy.logdebug("Number of detections: {}".format(num_detections))
         
         self.pub_cloud.publish(msg)
         self.pub_bbox.publish(arr_bbox)
@@ -167,9 +160,9 @@ class Second_ROS:
 
 if __name__ == '__main__':
     sec = Second_ROS()
-    rospy.init_node('second_ros_node', anonymous=True)
+    rospy.init_node('second_ros_node')
     try:
         rospy.spin()
     except KeyboardInterrupt:
         del sec
-        print("[second_ros] Shutting down")
+        rospy.loginfo("[second_ros] Shutting down")
