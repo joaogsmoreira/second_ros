@@ -12,6 +12,10 @@ from second.utils.eval import get_coco_eval_result, get_official_eval_result
 from second.data.dataset import Dataset, register_dataset
 from second.utils.progress_bar import progress_bar_iter as prog_bar
 
+import sys
+sys.path.append("/home/johny/catkin_ws/src/second_ros")
+from config.defines import TRAINING_DATASET_SIZE, TESTING_DATASET_SIZE
+
 @register_dataset
 class KittiDataset(Dataset):
     NumPointFeatures = 4
@@ -346,6 +350,11 @@ def create_kitti_info_file(data_path, save_path=None, relative_path=True):
     train_img_ids = _read_imageset_file(str(imageset_folder / "train.txt"))
     val_img_ids = _read_imageset_file(str(imageset_folder / "val.txt"))
     test_img_ids = _read_imageset_file(str(imageset_folder / "test.txt"))
+    
+    # OVERRIDING TO USE CUSTOM DATASET
+    train_img_ids   = TRAINING_DATASET_SIZE
+    val_img_ids     = TESTING_DATASET_SIZE
+    test_img_ids    = TESTING_DATASET_SIZE
 
     print("Generate info. this may take several minutes.")
     if save_path is None:

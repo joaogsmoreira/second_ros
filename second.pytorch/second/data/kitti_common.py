@@ -8,6 +8,10 @@ from collections import OrderedDict
 import numpy as np
 from skimage import io
 
+import sys
+sys.path.append("/home/johny/catkin_ws/src/second_ros")
+from config.defines import TRAINING_DATASET_SIZE, TESTING_DATASET_SIZE
+
 
 def area(boxes, add1=False):
     """Computes area of boxes.
@@ -129,25 +133,25 @@ def _check_kitti_directory(root_path):
     results.append((path / 'testing').exists())
     path_train_image_2 = path / 'training' / 'image_2'
     results.append(path_train_image_2.exists())
-    results.append(len(path_train_image_2.glob('*.png')) == 7481)
+    results.append(len(path_train_image_2.glob('*.png')) == TRAINING_DATASET_SIZE)
     path_train_label_2 = path / 'training' / 'label_2'
     results.append(path_train_label_2.exists())
     path_train_lidar = path / 'training' / 'velodyne'
     results.append(path_train_lidar.exists())
     path_train_calib = path / 'training' / 'calib'
     results.append(path_train_calib.exists())
-    results.append(len(path_train_label_2.glob('*.txt')) == 7481)
-    results.append(len(path_train_lidar.glob('*.bin')) == 7481)
-    results.append(len(path_train_calib.glob('*.txt')) == 7481)
+    results.append(len(path_train_label_2.glob('*.txt')) == TRAINING_DATASET_SIZE)
+    results.append(len(path_train_lidar.glob('*.bin')) == TRAINING_DATASET_SIZE)
+    results.append(len(path_train_calib.glob('*.txt')) == TRAINING_DATASET_SIZE)
     path_test_image_2 = path / 'testing' / 'image_2'
     results.append(path_test_image_2.exists())
-    results.append(len(path_test_image_2.glob('*.png')) == 7518)
+    results.append(len(path_test_image_2.glob('*.png')) == TESTING_DATASET_SIZE)
     path_test_lidar = path / 'testing' / 'velodyne'
     results.append(path_test_lidar.exists())
     path_test_calib = path / 'testing' / 'calib'
     results.append(path_test_calib.exists())
-    results.append(len(path_test_lidar.glob('*.bin')) == 7518)
-    results.append(len(path_test_calib.glob('*.txt')) == 7518)
+    results.append(len(path_test_lidar.glob('*.bin')) == TESTING_DATASET_SIZE)
+    results.append(len(path_test_calib.glob('*.txt')) == TESTING_DATASET_SIZE)
     return np.array(results, dtype=np.bool)
 
 
@@ -156,7 +160,7 @@ def get_kitti_image_info(path,
                          label_info=True,
                          velodyne=False,
                          calib=False,
-                         image_ids=7481,
+                         image_ids=TRAINING_DATASET_SIZE,
                          extend_matrix=True,
                          num_worker=8,
                          relative_path=True,
