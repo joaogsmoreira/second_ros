@@ -42,7 +42,7 @@ $ pip install dist/spconv-1.2.1-*
 Note: this repo was implemented using version 1.2.1.
 For the complete overview of SpConv, please visit [spconv.](https://github.com/traveller59/second.pytorch)
 
-## Setting up the package
+## Getting the files
 
 ### Clone project into catkin_ws and build it
 
@@ -59,7 +59,7 @@ $ sudo apt install ros-noetic-jsk-rviz-plugins
 
 To download rosbags for testing, please follow the [link](https://github.com/tomas789/kitti2bag) to get a kitti.bag for testing.
 
-## Using the package
+## Running
 
 ### Running the package
 
@@ -73,6 +73,10 @@ Example of adding DEBUG level prints:
 ```
 echo log4j.logger.ros.second_ros=DEBUG >> $ROS_ROOT/config/rosconsole.config
 ```
+
+## Training
+
+Follow [second.pytorch](https://github.com/traveller59/second.pytorch) training guide for more information.
 
 ## Licenses and References
 Most of the code is from
