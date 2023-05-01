@@ -18,6 +18,11 @@ from second.pytorch.train import build_network
 from second.protos import pipeline_pb2
 from second.utils import config_tool
 
+# This value represents the difference in height from our custom dataset to the Kitti dataset
+# since Kitti use a height of 1,73m, and our dataset was taken with a height of ~0.90m
+# we added the difference to both labeling and in the bounding box representation code (it might require manual tuning)
+_LIDAR_HEIGHT = 0.80
+
 class Second_ROS:
     def __init__(self):
         config_path, ckpt_path = self.init_ros()
@@ -46,7 +51,7 @@ class Second_ROS:
         self.anchors = target_assigner.generate_anchors(feature_map_size)["anchors"]
         self.anchors = torch.tensor(self.anchors, dtype=torch.float32, device=self.device)
         self.anchors = self.anchors.view(1, -1, 7)
-        rospy.loginfo("[second_ros] Model Initialized")
+        print("[second_ros] Model Initialized")
 
 
     def init_ros(self):
@@ -57,12 +62,12 @@ class Second_ROS:
         self.pub_cloud = rospy.Publisher("/synced_cloud", PointCloud2, queue_size=1)
         
         # Trained for all classes
-        config_path = rospy.get_param("/config_path", "/home/johny/catkin_ws/src/second_ros/config/all.fhd.config")
-        ckpt_path = rospy.get_param("/ckpt_path", "/home/johny/catkin_ws/src/second_ros/trained_models/voxelnet-99040.tckpt")
+        #config_path = rospy.get_param("/config_path", "/home/johny/catkin_ws/src/second_ros/config/all.fhd.config")
+        #ckpt_path = rospy.get_param("/ckpt_path", "/home/johny/catkin_ws/src/second_ros/trained_models/voxelnet-99040.tckpt")
         
-        # Trained for pedestrians/cyclists only
-        #config_path = rospy.get_param("/config_path", "/home/johny/catkin_ws/src/second_ros/second.pytorch/second/configs/people.fhd.config")
-        #ckpt_path = rospy.get_param("/ckpt_path", "/home/johny/catkin_ws/src/second_ros/trained_people/voxelnet-30950.tckpt")
+        # Trained for pedestrians only
+        config_path = rospy.get_param("/config_path", "/home/johny/catkin_ws/src/second_ros/config/people.fhd.config")
+        ckpt_path = rospy.get_param("/ckpt_path", "/home/johny/catkin_ws/src/second_ros/trained_custom_v2/voxelnet-43330.tckpt")
         
         return config_path, ckpt_path
 
@@ -120,22 +125,17 @@ class Second_ROS:
         arr_bbox = BoundingBoxArray()
 
         for i in range(num_detections):
-            
-            if label[i] != 2:               # Checking for pedestrian only
-                continue
-            #if scores[i] < 0.50:          # With confidence level of at least 50%
+            #if label[i] != 2:               # Checking for pedestrian only
                 #continue
-            
-            rospy.logdebug("Label: %d\tScore: %f", label[i], scores[i])
+            if  scores[i] < 0.50:          # With confidence level of at least 50%
+                continue
             
             bbox = BoundingBox()
-
             bbox.header.frame_id = msg.header.frame_id
             bbox.header.stamp = rospy.Time.now()
-
             bbox.pose.position.x = float(boxes_lidar[i][0])
             bbox.pose.position.y = float(boxes_lidar[i][1])
-            bbox.pose.position.z = float(boxes_lidar[i][2]) + float(boxes_lidar[i][5]) / 2
+            bbox.pose.position.z = float(boxes_lidar[i][2]) + float(boxes_lidar[i][5]) / 2 - _LIDAR_HEIGHT
             bbox.dimensions.x = float(boxes_lidar[i][3])  # width
             bbox.dimensions.y = float(boxes_lidar[i][4])  # length
             bbox.dimensions.z = float(boxes_lidar[i][5])  # height
@@ -146,14 +146,17 @@ class Second_ROS:
             bbox.pose.orientation.z = q.z
             bbox.pose.orientation.w = q.w
             bbox.value = scores[i]
-            bbox.label = label[i]
-
+            # Since we're assuming every bounding box is related to the class Pedestrian, we're overwriting
+            # the jsk bounding box variable "label" to represent the unique id of the bounding box
+            bbox.label = i
             arr_bbox.boxes.append(bbox)
+            
+            #rospy.loginfo("Label: %d\tScore: %f", label[i], scores[i])
         
         arr_bbox.header.frame_id = msg.header.frame_id
         arr_bbox.header.stamp = rospy.Time.now()
-        #rospy.logdebug("Number of detections: {}".format(num_detections))
         
+        # This way we garantee that the bounding box we're seeing is relative to the current point cloud we're seeing
         self.pub_cloud.publish(msg)
         self.pub_bbox.publish(arr_bbox)
 

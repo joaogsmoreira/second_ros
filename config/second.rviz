@@ -5,6 +5,8 @@ Panels:
     Property Tree Widget:
       Expanded:
         - /Global Options1
+        - /BoundingBoxArray3
+        - /MarkerArray1
       Splitter Ratio: 0.5
     Tree Height: 487
   - Class: rviz/Selection
@@ -24,7 +26,7 @@ Panels:
   - Class: rviz/Time
     Name: Time
     SyncMode: 0
-    SyncSource: ""
+    SyncSource: PointCloud2
 Preferences:
   PromptSaveOnExit: true
 Toolbars:
@@ -169,18 +171,47 @@ Visualization Manager:
       Show Trail: false
       Value: false
     - Class: jsk_rviz_plugin/BoundingBoxArray
-      Enabled: true
+      Enabled: false
       Name: BoundingBoxArray
       Queue Size: 10
       Topic: /tracking
       Unreliable: false
-      Value: true
+      Value: false
       alpha: 0.800000011920929
       color: 25; 255; 0
       coloring: Label
       line width: 0.004999999888241291
       only edge: false
       show coords: false
+    - Class: rviz/Marker
+      Enabled: false
+      Marker Topic: /bbox_id
+      Name: Marker
+      Namespaces:
+        {}
+      Queue Size: 100
+      Value: false
+    - Class: jsk_rviz_plugin/BoundingBoxArray
+      Enabled: true
+      Name: BoundingBoxArray
+      Queue Size: 10
+      Topic: /tracked_bbox
+      Unreliable: false
+      Value: true
+      alpha: 0.800000011920929
+      color: 25; 255; 0
+      coloring: Label
+      line width: 0.10000000149011612
+      only edge: false
+      show coords: false
+    - Class: rviz/MarkerArray
+      Enabled: true
+      Marker Topic: /tracked_bbox_id
+      Name: MarkerArray
+      Namespaces:
+        "": true
+      Queue Size: 100
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -209,7 +240,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 11.358833312988281
+      Distance: 17.490192413330078
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -225,9 +256,9 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.6853971481323242
+      Pitch: 0.28039753437042236
       Target Frame: <Fixed Frame>
-      Yaw: 3.197237014770508
+      Yaw: 3.357240676879883
     Saved: ~
 Window Geometry:
   Displays:
@@ -247,5 +278,5 @@ Window Geometry:
   Views:
     collapsed: true
   Width: 1920
-  X: 0
-  Y: 360
+  X: 84
+  Y: 27

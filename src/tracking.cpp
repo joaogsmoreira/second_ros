@@ -1,5 +1,7 @@
 #include "ros/ros.h"
 #include <sensor_msgs/PointCloud2.h>
+#include <string>
+#include <visualization_msgs/Marker.h>
 #include <jsk_recognition_msgs/BoundingBox.h>
 #include <jsk_recognition_msgs/BoundingBoxArray.h>
 #include <cmath>
@@ -32,6 +34,7 @@ public:
     jsk_recognition_msgs::BoundingBoxArray prev_boxes;
     // Publisher
     ros::Publisher publisher;
+    ros::Publisher pubId;
 };
 
 
@@ -160,14 +163,13 @@ int Tracking::searchBoxIndex(const jsk_recognition_msgs::BoundingBoxArray& boxes
 }
 
 void Tracking::callback(const jsk_recognition_msgs::BoundingBoxArray& latest_boxes) {
-    ROS_DEBUG_STREAM("BoundingBoxArray received");
     curr_boxes = latest_boxes;
     //  Since we're assuming every bounding box is related to the class Pedestrian, we're overwriting
     //  the jsk bounding box variable "label" to represent the unique id of the bounding box
-    uint32_t fake_id = 0;
-    for (auto& box : curr_boxes.boxes) {
-        box.label = fake_id++;
-    }
+    // uint32_t fake_id = 0;
+    // for (auto& box : curr_boxes.boxes) {
+    //     box.label = fake_id++;
+    // }
 
     if (prev_boxes.boxes.empty()) {
         prev_boxes = curr_boxes;
@@ -205,9 +207,28 @@ void Tracking::callback(const jsk_recognition_msgs::BoundingBoxArray& latest_box
             curr_boxes.boxes[curr_index].label = prev_boxes.boxes[prev_index].label;
         }
     }
-    
-    prev_boxes = curr_boxes;
+
     this->publisher.publish(curr_boxes);
+    for (auto& box : curr_boxes.boxes) {
+        visualization_msgs::Marker marker;
+        marker.header.frame_id = "rslidar";
+        marker.id = box.label;
+        marker.type = visualization_msgs::Marker::TEXT_VIEW_FACING;
+        marker.action = visualization_msgs::Marker::ADD;
+        marker.pose.position.x = box.pose.position.x;
+        marker.pose.position.y = box.pose.position.y;
+        marker.pose.position.z = box.pose.position.z;
+        marker.scale.x = 0.5;
+        marker.scale.y = 0.5;
+        marker.scale.z = 0.5;
+        marker.color.a = 1.0;
+        marker.color.r = 1.0;
+        marker.color.g = 1.0;
+        marker.color.b = 1.0;
+        marker.text = std::to_string(box.label);
+        this->pubId.publish(marker);
+    }
+    prev_boxes = curr_boxes;
 }
 
 int main(int argc, char **argv) {
@@ -216,8 +237,8 @@ int main(int argc, char **argv) {
     Tracking tracker;
 
     ros::Subscriber pcl = a.subscribe("/detections", 10000, &Tracking::callback, &tracker);
-    tracker.publisher = a.advertise<jsk_recognition_msgs::BoundingBoxArray>("/tracking", 10000);
-
+    tracker.publisher   = a.advertise<jsk_recognition_msgs::BoundingBoxArray>("/tracking", 10000);
+    tracker.pubId       = a.advertise<visualization_msgs::Marker>("/bbox_id", 10000);
 
     while (ros::ok()) {
         ros::spinOnce();
