@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
-
 import rospy
 import numpy as np
 from visualization_msgs.msg import Marker, MarkerArray
 from scipy.optimize import linear_sum_assignment
-from jsk_recognition_msgs.msg import BoundingBoxArray, BoundingBox
+from jsk_recognition_msgs.msg import BoundingBoxArray
 
 class BoundingBoxMatcher:
     def __init__(self, cost_thresh=1.0):
         self.bboxes_prev = []
         self.cost_thresh = cost_thresh
 
-    def match(self, bboxes):
+    def __match(self, bboxes):
         """
         Performs data association using the Hungarian algorithm.
         :param bboxes: A list of BoundingBox messages from the current frame.
@@ -39,6 +38,16 @@ class BoundingBoxMatcher:
             matches.append((i, j))
         return matches
 
+    def associate(self, bboxes):
+        matches = self.__match(bboxes)
+        # Assign the matches to the label field of the current frame's bounding boxes.
+        for i, bbox in enumerate(bboxes):
+            for match in matches:
+                if match[1] == i:
+                    # Assign the label from the previous frame's matching bounding box.
+                    bbox.label = bbox_matcher.bboxes_prev[match[0]].label
+        return bboxes
+
 def get_marker(bbox, header):
     marker          = Marker()
     marker.type     = Marker.TEXT_VIEW_FACING
@@ -58,28 +67,26 @@ def get_marker(bbox, header):
 
 def callback(bounding_boxes : BoundingBoxArray):
     bboxes = bounding_boxes.boxes
-    matches = bbox_matcher.match(bboxes)
-    # Assign the matches to the label field of the current frame's bounding boxes.
-    for i, bbox in enumerate(bboxes):
-        for match in matches:
-            if match[1] == i:
-                # Assign the label from the previous frame's matching bounding box.
-                bbox.label = bbox_matcher.bboxes_prev[match[0]].label
+    
+    # Data association with Hungarian
+    bboxes = bbox_matcher.associate(bboxes)
 
+    # Matched bounding boxes
     matched_bboxes          = BoundingBoxArray()
     matched_bboxes.header   = bounding_boxes.header
     matched_bboxes.boxes    = bboxes
 
-    pub_bbox.publish(matched_bboxes)
-
-    # Store the current frame's bounding boxes for the next iteration.
-    bbox_matcher.bboxes_prev = bboxes
-
+    # Adding text to the center of bbox
     marker_arr = MarkerArray()
     for bbox in matched_bboxes.boxes:
         marker_arr.markers.append(get_marker(bbox, matched_bboxes.header))
-        
+
+    # Publish    
+    pub_bbox.publish(matched_bboxes)
     pub_marker.publish(marker_arr)
+
+    # Store the current frame's bounding boxes for the next iteration.
+    bbox_matcher.bboxes_prev = bboxes
 
 if __name__ == "__main__":
     rospy.init_node('tracker_node')
