@@ -127,8 +127,8 @@ class Second_ROS:
         for i in range(num_detections):
             #if label[i] != 2:               # Checking for pedestrian only
                 #continue
-            if  scores[i] < 0.50:          # With confidence level of at least 50%
-                continue
+            #if  scores[i] < 0.50:          # With confidence level of at least 50%
+                #continue
             
             bbox = BoundingBox()
             bbox.header.frame_id = msg.header.frame_id
@@ -148,7 +148,7 @@ class Second_ROS:
             bbox.value = scores[i]
             # Since we're assuming every bounding box is related to the class Pedestrian, we're overwriting
             # the jsk bounding box variable "label" to represent the unique id of the bounding box
-            bbox.label = i
+            bbox.label = i+1
             arr_bbox.boxes.append(bbox)
             
             #rospy.loginfo("Label: %d\tScore: %f", label[i], scores[i])

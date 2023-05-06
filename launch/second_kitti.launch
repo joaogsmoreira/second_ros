@@ -2,9 +2,9 @@
 
   <env name="ROSCONSOLE_FORMAT" value="[${time}] [${node}]: ${message}"/>
   <remap from="/rslidar_points" to="point_cloud"/>
-  <node pkg="rosbag" type="play" name="player" output="log" args="-l /home/johny/Downloads/lsa_log.bag -r 0.5" />
+  <node pkg="rosbag" type="play" name="player" output="log" args="-l /home/johny/Downloads/lsa_log.bag -r 1" />
   <node name="second_ros" type="second_ros.py" pkg="second_ros" output="screen"/>
-  <node name="tracker" type="tracker.py" pkg="second_ros" output="screen"/>
+  <node name="tracker_ros" type="tracker_ros.py" pkg="second_ros" output="screen"/>
   <!-- <node name="tracking_node" type="tracking_node" pkg="second_ros" output="screen"/> -->
   <node type="rviz" name="rviz" pkg="rviz" args="-d $(find second_ros)/config/second.rviz" />
 
