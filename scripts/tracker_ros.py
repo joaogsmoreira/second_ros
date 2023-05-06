@@ -74,6 +74,7 @@ class BBoxTracker:
 class BBoxMatcher:
     def __init__(self, cost_thresh=1.0):
         self.cost_thresh = cost_thresh
+        self.history_len = 50 #frames
 
     def __match(self, bboxes_curr, bboxes_prev):
         """
@@ -104,7 +105,8 @@ class BBoxMatcher:
         return matches
 
     def associate(self, bboxes_curr, bboxes_prev):
-        matches = self.__match(bboxes_curr, bboxes_prev)
+        last_frame_bboxes = bboxes_prev[-1]
+        matches = self.__match(bboxes_curr, last_frame_bboxes)
         # Assign the matches to the label field of the current frame's bounding boxes.
         _new_boxes = 0
         for i, bbox in enumerate(bboxes_curr):
@@ -112,12 +114,27 @@ class BBoxMatcher:
             for match in matches:
                 if match[1] == i:
                     # Assign the label from the previous frame's matching bounding box.
-                    bbox.label = bboxes_prev[match[0]].label
+                    bbox.label = last_frame_bboxes[match[0]].label
+            # If a box was not matched, check if it has appeared in the recent frames
             if bbox.label == 0:
-                # This is a new bounding box
-                bbox.label = max([bbox.label for bbox in bboxes_prev], default=1) + 1 + _new_boxes
+                _appeared = False
+                for j in range(1, min(self.history_len, len(bboxes_prev))):
+                    prev_bboxes = bboxes_prev[-j]
+                    for prev_bbox in prev_bboxes:
+                        if np.linalg.norm(np.array([bbox.pose.position.x, bbox.pose.position.y, bbox.pose.position.z]) -
+                                          np.array([prev_bbox.pose.position.x, prev_bbox.pose.position.y, prev_bbox.pose.position.z])) < self.cost_thresh:
+                            # Assign the label from the previous frame's matching bounding box.
+                            bbox.label = prev_bbox.label
+                            _appeared = True
+                            break
+                    if _appeared:
+                        break
+            # This is a new bounding box
+            if bbox.label == 0:
+                prev_labels = [prev_bbox.label for prev_bboxes in bboxes_prev for prev_bbox in prev_bboxes]
+                bbox.label = max(prev_labels, default=1) + 1 + _new_boxes
                 _new_boxes += 1
-                print("assigned label ", bbox.label)
+
         return bboxes_curr
 
 
@@ -148,7 +165,7 @@ class MultipleBBoxTracker:
         bboxes = bounding_boxes.boxes
 
         if not self.bboxes_prev:
-            self.bboxes_prev = bboxes
+            self.bboxes_prev.append(bboxes)
             #self.tracks = [(bbox.label, BBoxTracker(bbox)) for bbox in bboxes]
             return
 
@@ -160,6 +177,14 @@ class MultipleBBoxTracker:
         matched_bboxes.header   = bounding_boxes.header
         matched_bboxes.boxes    = bboxes
 
+        # Clearing previous texts markers
+        marker_delete= MarkerArray()
+        marker = Marker()
+        marker.id = 0
+        marker.action = Marker.DELETEALL
+        marker_delete.markers.append(marker)
+        pub_marker.publish(marker_delete)
+
         # Adding text to the center of bbox
         marker_arr = MarkerArray()
         for bbox in matched_bboxes.boxes:
@@ -170,7 +195,9 @@ class MultipleBBoxTracker:
         pub_marker.publish(marker_arr)
 
         # Store the current frame's bounding boxes for the next iteration.
-        self.bboxes_prev = bboxes
+        self.bboxes_prev.append(bboxes)
+        if len(self.bboxes_prev) > self.matcher.history_len:
+            self.bboxes_prev.pop(0)
 
 if __name__ == "__main__":
     rospy.init_node('tracker_node')
