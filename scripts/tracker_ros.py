@@ -2,17 +2,14 @@
 import rospy
 import numpy as np
 from visualization_msgs.msg import Marker, MarkerArray
+from geometry_msgs.msg import Pose, Point
 from jsk_recognition_msgs.msg import BoundingBoxArray, BoundingBox
 from scipy.optimize import linear_sum_assignment
 from filterpy.kalman import KalmanFilter
 from filterpy.common import Q_discrete_white_noise
 
 class BBoxTracker:
-    def __init__(self, bbox : BoundingBox, 
-                 dt=0.1, 
-                 x_std_meas=0.1, 
-                 y_std_meas=0.1, 
-                 z_std_meas=0.1):
+    def __init__(self, bbox: BoundingBox, dt=0.4, x_std_meas=0.1, y_std_meas=0.1, z_std_meas=0.1):
         """
         Initializes a BBoxTracker object with the specified parameters.
 
@@ -23,53 +20,51 @@ class BBoxTracker:
         - y_std_meas (float): The standard deviation of the measurement noise in the y-axis.
         - z_std_meas (float): The standard deviation of the measurement noise in the z-axis.
         """
-        self.kf = KalmanFilter(dim_x=3, dim_z=3)
+        self.kf = KalmanFilter(dim_x=6, dim_z=3)
         
-        # define state variables: x, y, z
-        self.kf.x = np.array([bbox.pose.position.x,
-                              bbox.pose.position.y,
-                              bbox.pose.position.z])
+        # define state variables: x, y, z, vx, vy, vz
+        self.kf.x = np.array([bbox.pose.position.x, bbox.pose.position.y, bbox.pose.position.z, 0, 0, 0])
         
         # define measurement function
-        self.kf.H = np.array([[1, 0, 0],
-                              [0, 1, 0],
-                              [0, 0, 1]])
+        self.kf.H = np.array([[1, 0, 0, 0, 0, 0],
+                              [0, 1, 0, 0, 0, 0],
+                              [0, 0, 1, 0, 0, 0]])
         
         # define measurement noise
         self.kf.R = np.diag([x_std_meas**2, y_std_meas**2, z_std_meas**2])
         
         # define process noise
-        self.kf.Q = Q_discrete_white_noise(dim=3, dt=dt, var=0.1)
+        self.kf.Q = np.diag([0.01, 0.01, 0.01, 0.01, 0.01, 0.01])
         
         # define state transition function
-        self.kf.F = np.array([[1, 0, 0],
-                              [0, 1, 0],
-                              [0, 0, 1]])
+        self.kf.F = np.array([[1, 0, 0, dt, 0, 0],
+                              [0, 1, 0, 0, dt, 0],
+                              [0, 0, 1, 0, 0, dt],
+                              [0, 0, 0, 1, 0, 0],
+                              [0, 0, 0, 0, 1, 0],
+                              [0, 0, 0, 0, 0, 1]])
         
-        # define control function
-        self.kf.B = np.zeros((3, 0))
-        
-        # define control input noise
-        self.kf.R[0:3, 0:3] = np.diag([x_std_meas**2, y_std_meas**2, z_std_meas**2])
-
     def predict(self):
         """
         Predicts the state of the filter at the next time step.
         """
         self.kf.predict()
-
-    def update(self, bbox : BoundingBox):
+    
+    def update(self, bbox: BoundingBox):
         """
-        Updates the state of the filter based on the measurements from the given bounding box.
+        Updates the state of the filter based on the position measurements from the given bounding box.
 
         Parameters:
-        - bbox (object): The bounding box containing the measurements.
+        - bbox (object): The bounding box containing the position measurements.
         """
-        z = np.array([bbox.pose.position.x,
-                      bbox.pose.position.y,
-                      bbox.pose.position.z])
-        
-        self.kf.update(z)
+        self.kf.update(np.array([bbox.pose.position.x, bbox.pose.position.y, bbox.pose.position.z]))
+    
+    def get_state(self):
+        """
+        Returns the current estimated state of the Kalman filter.
+        """
+        return self.kf.x
+
 
 class BBoxMatcher:
     def __init__(self, cost_thresh=1.0):
@@ -163,10 +158,9 @@ class MultipleBBoxTracker:
 
     def callback(self, bounding_boxes : BoundingBoxArray):
         bboxes = bounding_boxes.boxes
-
         if not self.bboxes_prev:
             self.bboxes_prev.append(bboxes)
-            #self.tracks = [(bbox.label, BBoxTracker(bbox)) for bbox in bboxes]
+            self.tracks = [(bbox.label, BBoxTracker(bbox)) for bbox in bboxes]
             return
 
         # Data association with Hungarian
@@ -176,6 +170,39 @@ class MultipleBBoxTracker:
         matched_bboxes          = BoundingBoxArray()
         matched_bboxes.header   = bounding_boxes.header
         matched_bboxes.boxes    = bboxes
+        
+        ################ EXPERIMENT ON KF ################
+        # Predict and update existing tracks
+        for track in self.tracks:
+            bbox_label, bbox_tracker = track
+            bbox_found = False
+            for bbox in bboxes:
+                if bbox.label == bbox_label:
+                    bbox_found = True
+                    bbox_tracker.predict()
+                    bbox_tracker.update(bbox)
+                    break
+            
+            #if not bbox_found:
+                #bbox_tracker.predict()
+
+            bbox = bbox_tracker.get_state()
+            pose = Pose(position=Point(x=bbox[0], y=bbox[1], z=bbox[2]))
+            marker = Marker()
+            marker.pose = pose
+            marker.type     = Marker.CUBE
+            marker.action   = Marker.ADD
+            marker.header   = matched_bboxes.header
+            marker.id       = bbox_label
+            marker.scale.x  = 0.2
+            marker.scale.y  = 0.2
+            marker.scale.z  = 0.2
+            marker.color.a  = 1.0
+            marker.color.r  = 1.0
+            marker.color.g  = 0.0
+            marker.color.b  = 0.0
+            pub_predict.publish(marker)
+            ################### END ###################
 
         # Clearing previous texts markers
         marker_delete= MarkerArray()
@@ -205,4 +232,5 @@ if __name__ == "__main__":
     rospy.Subscriber('/detections', BoundingBoxArray, mbboxtracker.callback)
     pub_bbox    = rospy.Publisher("/tracked_bbox", BoundingBoxArray, queue_size=100)
     pub_marker  = rospy.Publisher("/tracked_bbox_id", MarkerArray, queue_size=100)
+    pub_predict = rospy.Publisher("/predicted_bbox", Marker, queue_size=100)
     rospy.spin()
