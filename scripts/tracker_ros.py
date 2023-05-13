@@ -38,7 +38,7 @@ class BBoxTracker:
         
     def initialize(self, bbox : BoundingBox, dt, std_meas):
         # Define state variables: x, y, z, vx, vy, vz
-        self.kf.x = np.array([bbox.pose.position.x, bbox.pose.position.y, bbox.pose.position.z, 0.2, 0.2, 0.2])
+        self.kf.x = np.array([bbox.pose.position.x, bbox.pose.position.y, bbox.pose.position.z, 0.1, 0.1, 0.1])
         
         # Define measurement function
         self.kf.H = np.array([[1, 0, 0, 0, 0, 0],
@@ -81,18 +81,6 @@ class BBoxTracker:
         # Extract position and velocity from Kalman filter state
         pos = Point(self.kf.x[0], self.kf.x[1], self.kf.x[2])
         vel = Vector3(self.kf.x[3], self.kf.x[4], self.kf.x[5])
-
-        # Create a tracking marker
-        marker                  = Marker()
-        marker.header.frame_id  = 'rslidar'
-        marker.header.stamp     = rospy.Time.now()
-        marker.lifetime         = rospy.Duration(secs = 0.1)
-        marker.id               = self.id
-        marker.type             = Marker.SPHERE
-        marker.action           = Marker.ADD
-        marker.pose             = Pose(position=Point(self.kf.x[0], self.kf.x[1], self.kf.x[2]))
-        marker.scale            = Vector3(0.2, 0.2, 0.2)
-        marker.color            = ColorRGBA(1.0, 0.0, 0.0, 1.0)
 
         # Create a tracking box
         box                 = BoundingBox()
@@ -176,6 +164,7 @@ class MultipleBBoxTracker:
     def __init__(self) -> None:
         self.bboxes_prev    = []
         self.tracks         = {}
+        self.estimated_velo = {}
         self.matcher        = BBoxMatcher()
         self.update_trigger = 0
 
@@ -194,16 +183,19 @@ class MultipleBBoxTracker:
         return marker
     
     def get_velocities(self, curr_boxes : List[BoundingBox]):
-        for i, curbbox in enumerate(curr_boxes):
-            if curbbox.label == 1:
-                for j, prevbox in enumerate(self.bboxes_prev[-1]):
-                    if prevbox.label == 1:
-                        poseX = curbbox.pose.position.x - prevbox.pose.position.x
-                        dT = curbbox.header.stamp.to_sec() - prevbox.header.stamp.to_sec()
-                        #print("PoseX: ", poseX)
-                        #print("dT: ", dT)
-                        #print("Bounding Box Velocity: ", poseX / dT)
-                        return
+        for curbox in curr_boxes:
+            for prevbox in self.bboxes_prev[-1]:
+                if curbox.label == prevbox.label:
+                    dT      = curbox.header.stamp.to_sec() - prevbox.header.stamp.to_sec()
+                    poseX   = curbox.pose.position.x - prevbox.pose.position.x
+                    poseY   = curbox.pose.position.y - prevbox.pose.position.y
+                    poseZ   = curbox.pose.position.z - prevbox.pose.position.z
+                    velX    = poseX / dT
+                    velY    = poseY / dT
+                    velZ    = poseZ / dT
+                    self.estimated_velo[curbox.label] = [velX, velY, velZ]
+                    if curbox.label == 1:
+                        print("BBox Velocity: ", velX, velY, velZ)
 
     def __from_obj_to_list(self, bounding_boxes : BoundingBoxArray) -> List[BoundingBox]:
         return bounding_boxes.boxes
@@ -280,7 +272,7 @@ class MultipleBBoxTracker:
         matched_bboxes.boxes    = bboxes
 
         # Get estimated velocities to feed into the kalman filter
-        self.get_velocities(matched_bboxes.boxes)
+        # self.get_velocities(matched_bboxes.boxes)
 
         # Updating kalman filter state and markers
         self.track(matched_bboxes.boxes)
