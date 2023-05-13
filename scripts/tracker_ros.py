@@ -1,15 +1,24 @@
 #!/usr/bin/env python3
 import rospy
 import numpy as np
+from typing import List
 from visualization_msgs.msg import Marker, MarkerArray
-from geometry_msgs.msg import Pose, Point
+from std_msgs.msg import ColorRGBA
+from geometry_msgs.msg import Pose, Point, Vector3
 from jsk_recognition_msgs.msg import BoundingBoxArray, BoundingBox
 from scipy.optimize import linear_sum_assignment
 from filterpy.kalman import KalmanFilter
 from filterpy.common import Q_discrete_white_noise
 
+# Tracking hyper-parameters
+_DETECTOR_STD_MEAS      = 0.1 # meters
+_DETECTOR_FREQUENCY     = 0.1 # seconds
+_ASSOCIATION_MAX_COST   = 1.0 # meters
+_ASSOCIATION_MAX_AGE    = 20  # frames
+_TRACKING_MAX_AGE       = 10  # frames
+
 class BBoxTracker:
-    def __init__(self, bbox: BoundingBox, dt=0.4, x_std_meas=0.1, y_std_meas=0.1, z_std_meas=0.1):
+    def __init__(self, bbox: BoundingBox, dt = _DETECTOR_FREQUENCY, std_meas = _DETECTOR_STD_MEAS):
         """
         Initializes a BBoxTracker object with the specified parameters.
 
@@ -20,23 +29,29 @@ class BBoxTracker:
         - y_std_meas (float): The standard deviation of the measurement noise in the y-axis.
         - z_std_meas (float): The standard deviation of the measurement noise in the z-axis.
         """
+        self.id = bbox.label
+        self.bbox_dimensions = bbox.dimensions
+        self.dt = dt
+        self.age = 0
         self.kf = KalmanFilter(dim_x=6, dim_z=3)
+        self.initialize(bbox, dt, std_meas)
         
-        # define state variables: x, y, z, vx, vy, vz
-        self.kf.x = np.array([bbox.pose.position.x, bbox.pose.position.y, bbox.pose.position.z, 0, 0, 0])
+    def initialize(self, bbox : BoundingBox, dt, std_meas):
+        # Define state variables: x, y, z, vx, vy, vz
+        self.kf.x = np.array([bbox.pose.position.x, bbox.pose.position.y, bbox.pose.position.z, 0.2, 0.2, 0.2])
         
-        # define measurement function
+        # Define measurement function
         self.kf.H = np.array([[1, 0, 0, 0, 0, 0],
                               [0, 1, 0, 0, 0, 0],
                               [0, 0, 1, 0, 0, 0]])
         
-        # define measurement noise
-        self.kf.R = np.diag([x_std_meas**2, y_std_meas**2, z_std_meas**2])
+        # Define measurement noise
+        self.kf.R = np.diag([std_meas**2, std_meas**2, std_meas**2])
         
-        # define process noise
+        # Define process noise
         self.kf.Q = np.diag([0.01, 0.01, 0.01, 0.01, 0.01, 0.01])
         
-        # define state transition function
+        # Define state transition function
         self.kf.F = np.array([[1, 0, 0, dt, 0, 0],
                               [0, 1, 0, 0, dt, 0],
                               [0, 0, 1, 0, 0, dt],
@@ -61,20 +76,44 @@ class BBoxTracker:
     
     def get_state(self):
         """
-        Returns the current estimated state of the Kalman filter.
+        Returns the current estimated state of the Kalman filter as a ROS marker.
         """
-        return self.kf.x
+        # Extract position and velocity from Kalman filter state
+        pos = Point(self.kf.x[0], self.kf.x[1], self.kf.x[2])
+        vel = Vector3(self.kf.x[3], self.kf.x[4], self.kf.x[5])
+
+        # Create a tracking marker
+        marker                  = Marker()
+        marker.header.frame_id  = 'rslidar'
+        marker.header.stamp     = rospy.Time.now()
+        marker.lifetime         = rospy.Duration(secs = 0.1)
+        marker.id               = self.id
+        marker.type             = Marker.SPHERE
+        marker.action           = Marker.ADD
+        marker.pose             = Pose(position=Point(self.kf.x[0], self.kf.x[1], self.kf.x[2]))
+        marker.scale            = Vector3(0.2, 0.2, 0.2)
+        marker.color            = ColorRGBA(1.0, 0.0, 0.0, 1.0)
+
+        # Create a tracking box
+        box                 = BoundingBox()
+        box.header.frame_id = 'rslidar'
+        box.header.stamp    = rospy.Time.now()
+        box.label           = self.id
+        box.dimensions      = self.bbox_dimensions
+        box.pose            = Pose(position=Point(self.kf.x[0], self.kf.x[1], self.kf.x[2]))
+        return box
 
 
 class BBoxMatcher:
-    def __init__(self, cost_thresh=1.0):
+    def __init__(self, cost_thresh = _ASSOCIATION_MAX_COST):
         self.cost_thresh = cost_thresh
-        self.history_len = 50 #frames
+        self.history_len = _ASSOCIATION_MAX_AGE
 
     def __match(self, bboxes_curr, bboxes_prev):
         """
         Performs data association using the Hungarian algorithm.
-        :param bboxes: A list of BoundingBox messages from the current frame.
+        :param bboxes_curr: A list of BoundingBox messages from the current frame.
+        :param bboxes_prev: A list of BoundingBox messages from the previous frame.
         :return: A list of tuples where each tuple contains the indices of the associated BoundingBox messages from the
         previous and current frames, respectively.
         """
@@ -99,7 +138,7 @@ class BBoxMatcher:
             matches.append((i, j))
         return matches
 
-    def associate(self, bboxes_curr, bboxes_prev):
+    def associate(self, bboxes_curr : List[BoundingBox], bboxes_prev : List[BoundingBox]):
         last_frame_bboxes = bboxes_prev[-1]
         matches = self.__match(bboxes_curr, last_frame_bboxes)
         # Assign the matches to the label field of the current frame's bounding boxes.
@@ -136,73 +175,79 @@ class BBoxMatcher:
 class MultipleBBoxTracker:
     def __init__(self) -> None:
         self.bboxes_prev    = []
-        self.tracks         = []
-        self.matcher        = BBoxMatcher(cost_thresh=1.0)
+        self.tracks         = {}
+        self.matcher        = BBoxMatcher()
+        self.update_trigger = 0
 
-    def get_marker(self, bbox : BoundingBox, header):
-        marker          = Marker()
-        marker.type     = Marker.TEXT_VIEW_FACING
-        marker.action   = Marker.ADD
-        marker.scale.x  = 0.5
-        marker.scale.y  = 0.5
-        marker.scale.z  = 0.5
-        marker.color.a  = 1.0
-        marker.color.r  = 1.0
-        marker.color.g  = 1.0
-        marker.color.b  = 1.0
-        marker.header   = header
-        marker.id       = bbox.label
-        marker.text     = str(bbox.label)
-        marker.pose     = bbox.pose
+    def get_marker(self, bbox : BoundingBox):
+        marker                  = Marker()
+        marker.header.frame_id  = 'rslidar'
+        marker.header.stamp     = rospy.Time.now()
+        marker.lifetime         = rospy.Duration(secs = 0.1)
+        marker.type             = Marker.TEXT_VIEW_FACING
+        marker.action           = Marker.ADD
+        marker.scale            = Vector3(0.5, 0.5, 0.5)
+        marker.color            = ColorRGBA(1.0, 1.0, 1.0, 1.0)
+        marker.id               = bbox.label
+        marker.text             = str(bbox.label)
+        marker.pose             = bbox.pose
         return marker
+    
+    def get_velocities(self, curr_boxes : List[BoundingBox]):
+        for i, curbbox in enumerate(curr_boxes):
+            if curbbox.label == 1:
+                for j, prevbox in enumerate(self.bboxes_prev[-1]):
+                    if prevbox.label == 1:
+                        poseX = curbbox.pose.position.x - prevbox.pose.position.x
+                        dT = curbbox.header.stamp.to_sec() - prevbox.header.stamp.to_sec()
+                        #print("PoseX: ", poseX)
+                        #print("dT: ", dT)
+                        #print("Bounding Box Velocity: ", poseX / dT)
+                        return
 
-    def callback(self, bounding_boxes : BoundingBoxArray):
-        bboxes = bounding_boxes.boxes
-        if not self.bboxes_prev:
-            self.bboxes_prev.append(bboxes)
-            self.tracks = [(bbox.label, BBoxTracker(bbox)) for bbox in bboxes]
-            return
-
-        # Data association with Hungarian
-        bboxes = self.matcher.associate(bboxes, self.bboxes_prev)
-
-        # Matched bounding boxes
-        matched_bboxes          = BoundingBoxArray()
-        matched_bboxes.header   = bounding_boxes.header
-        matched_bboxes.boxes    = bboxes
+    def __from_obj_to_list(self, bounding_boxes : BoundingBoxArray) -> List[BoundingBox]:
+        return bounding_boxes.boxes
+    
+    def track(self, curr_boxes : List[BoundingBox]):
+        # Create a copy of the tracks dictionary to avoid modifying it during iteration
+        tracks_copy = self.tracks.copy()
         
-        ################ EXPERIMENT ON KF ################
-        # Predict and update existing tracks
-        for track in self.tracks:
-            bbox_label, bbox_tracker = track
-            bbox_found = False
-            for bbox in bboxes:
-                if bbox.label == bbox_label:
-                    bbox_found = True
-                    bbox_tracker.predict()
-                    bbox_tracker.update(bbox)
-                    break
-            
-            #if not bbox_found:
-                #bbox_tracker.predict()
+        # Keep track of labels that appear in the current frame
+        curr_ids = set(box.label for box in curr_boxes)
+        
+        # Create box array message
+        box_msg = BoundingBoxArray()
+        box_msg.header.frame_id = 'rslidar'
+        box_msg.header.stamp    = rospy.Time.now()
 
-            bbox = bbox_tracker.get_state()
-            pose = Pose(position=Point(x=bbox[0], y=bbox[1], z=bbox[2]))
-            marker = Marker()
-            marker.pose = pose
-            marker.type     = Marker.CUBE
-            marker.action   = Marker.ADD
-            marker.header   = matched_bboxes.header
-            marker.id       = bbox_label
-            marker.scale.x  = 0.2
-            marker.scale.y  = 0.2
-            marker.scale.z  = 0.2
-            marker.color.a  = 1.0
-            marker.color.r  = 1.0
-            marker.color.g  = 0.0
-            marker.color.b  = 0.0
-            pub_predict.publish(marker)
-            ################### END ###################
+        # Adding box id to the center of bbox
+        marker_arr = MarkerArray()
+
+        # Cross-check track id's with current label id's
+        for id, tracker in tracks_copy.items():
+            if id in curr_ids:
+                tracker.predict()
+                tracker.update([box for box in curr_boxes if box.label == id][0])
+                tracker.age = 0
+                box_msg.boxes.append(tracker.get_state())
+                marker_arr.markers.append(self.get_marker(tracker.get_state()))
+            else:
+                # Remove track if label is not in current frame and track has reached max_age
+                if tracker.age > _TRACKING_MAX_AGE:
+                    print("Deleting track: ", id)
+                    del self.tracks[id]
+                else:
+                    tracker.age +=1
+                    tracker.predict()
+                    box_msg.boxes.append(tracker.get_state())
+                    marker_arr.markers.append(self.get_marker(tracker.get_state()))
+        # Check if its a new track
+        for box in curr_boxes:
+            if box.label not in self.tracks:
+                print("Creating track: ", box.label)
+                self.tracks[box.label] = BBoxTracker(box)
+        
+        print(f"Currently tracking {len(self.tracks)} boxes.")
 
         # Clearing previous texts markers
         marker_delete= MarkerArray()
@@ -212,14 +257,36 @@ class MultipleBBoxTracker:
         marker_delete.markers.append(marker)
         pub_marker.publish(marker_delete)
 
-        # Adding text to the center of bbox
-        marker_arr = MarkerArray()
-        for bbox in matched_bboxes.boxes:
-            marker_arr.markers.append(self.get_marker(bbox, matched_bboxes.header))
+        # Publish tracks & ids
+        pub_predict.publish(box_msg)
+        pub_marker.publish(marker_arr)
+
+
+    def callback(self, bounding_boxes : BoundingBoxArray):
+        bboxes = self.__from_obj_to_list(bounding_boxes)
+
+        # Initialize the system with the first bounding boxes
+        if not self.bboxes_prev:
+            self.bboxes_prev.append(bboxes)
+            self.tracks = {bbox.label: BBoxTracker(bbox) for bbox in bboxes}
+            return
+        
+        # Data association with Hungarian
+        bboxes = self.matcher.associate(bboxes, self.bboxes_prev)
+
+        # Matched bounding boxes
+        matched_bboxes          = BoundingBoxArray()
+        matched_bboxes.header   = bounding_boxes.header
+        matched_bboxes.boxes    = bboxes
+
+        # Get estimated velocities to feed into the kalman filter
+        self.get_velocities(matched_bboxes.boxes)
+
+        # Updating kalman filter state and markers
+        self.track(matched_bboxes.boxes)
 
         # Publish    
         pub_bbox.publish(matched_bboxes)
-        pub_marker.publish(marker_arr)
 
         # Store the current frame's bounding boxes for the next iteration.
         self.bboxes_prev.append(bboxes)
@@ -232,5 +299,5 @@ if __name__ == "__main__":
     rospy.Subscriber('/detections', BoundingBoxArray, mbboxtracker.callback)
     pub_bbox    = rospy.Publisher("/tracked_bbox", BoundingBoxArray, queue_size=100)
     pub_marker  = rospy.Publisher("/tracked_bbox_id", MarkerArray, queue_size=100)
-    pub_predict = rospy.Publisher("/predicted_bbox", Marker, queue_size=100)
+    pub_predict = rospy.Publisher("/predicted_bbox", BoundingBoxArray, queue_size=100)
     rospy.spin()
