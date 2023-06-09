@@ -67,7 +67,7 @@ class Second_ROS:
         
         # Trained for pedestrians only
         config_path = rospy.get_param("/config_path", "/home/johny/catkin_ws/src/second_ros/config/people.fhd.config")
-        ckpt_path = rospy.get_param("/ckpt_path", "/home/johny/catkin_ws/src/second_ros/trained_custom_v2/voxelnet-43330.tckpt")
+        ckpt_path = rospy.get_param("/ckpt_path", "/home/johny/catkin_ws/src/second_ros/trained_custom_v2/voxelnet-55710.tckpt")
         
         return config_path, ckpt_path
 

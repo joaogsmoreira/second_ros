@@ -1,7 +1,7 @@
 {
   "latest_ckpt": {
-    "voxelnet": "voxelnet-43330.tckpt",
-    "adam_optimizer": "adam_optimizer-43330.tckpt"
+    "voxelnet": "voxelnet-55710.tckpt",
+    "adam_optimizer": "adam_optimizer-55710.tckpt"
   },
   "all_ckpts": {
     "voxelnet": [
@@ -11,7 +11,9 @@
       "voxelnet-24760.tckpt",
       "voxelnet-30950.tckpt",
       "voxelnet-37140.tckpt",
-      "voxelnet-43330.tckpt"
+      "voxelnet-43330.tckpt",
+      "voxelnet-49520.tckpt",
+      "voxelnet-55710.tckpt"
     ],
     "adam_optimizer": [
       "adam_optimizer-6190.tckpt",
@@ -20,7 +22,9 @@
       "adam_optimizer-24760.tckpt",
       "adam_optimizer-30950.tckpt",
       "adam_optimizer-37140.tckpt",
-      "adam_optimizer-43330.tckpt"
+      "adam_optimizer-43330.tckpt",
+      "adam_optimizer-49520.tckpt",
+      "adam_optimizer-55710.tckpt"
     ]
   }
 }
