@@ -37,6 +37,7 @@ class BBoxTracker:
         self.age = 0
         self.kf = KalmanFilter(dim_x=6, dim_z=3)
         self.initialize(bbox, dt, std_meas)
+        self.path = []
         
     def initialize(self, bbox : BoundingBox, dt, std_meas):
         # Define state variables: x, y, z, vx, vy, vz
@@ -66,6 +67,7 @@ class BBoxTracker:
         Predicts the state of the filter at the next time step.
         """
         self.kf.predict()
+        self._update_path()
     
     def update(self, bbox: BoundingBox):
         """
@@ -75,6 +77,7 @@ class BBoxTracker:
         - bbox (object): The bounding box containing the position measurements.
         """
         self.kf.update(np.array([bbox.pose.position.x, bbox.pose.position.y, bbox.pose.position.z]))
+        self._update_path()
     
     def get_state(self):
         """
@@ -93,6 +96,42 @@ class BBoxTracker:
         box.pose            = Pose(position=Point(self.kf.x[0], self.kf.x[1], self.kf.x[2]))
         return box
 
+    def _update_path(self):
+        """
+        Updates the path variable with the current estimated position.
+        """
+        self.path.append(Point(self.kf.x[0], self.kf.x[1], self.kf.x[2]))
+
+    def get_path(self):
+        line_marker = Marker()
+        line_marker.header.frame_id = 'rslidar'
+        line_marker.header.stamp = rospy.Time.now()
+        line_marker.action = Marker.ADD
+        line_marker.type = Marker.LINE_STRIP
+        # Generate color components based on ID value
+        r = (self.id * 17) % 256
+        g = (self.id * 29) % 256
+        b = (self.id * 37) % 256
+
+        # Normalize the color components to the range [0, 1]
+        r /= 255.0
+        g /= 255.0
+        b /= 255.0
+
+        # Create the ColorRGBA object
+        line_marker.color = ColorRGBA(r, g, b, 1.0)
+        line_marker.scale = Vector3(0.1, 0.1, 0.1)
+        line_marker.id = (self.id + 1000)  # Add an offset to avoid conflicting with bbox markers
+        line_marker.points = self.path
+        return line_marker
+    
+    def del_path(self):
+        marker                  = Marker()
+        marker.header.frame_id  = 'rslidar'
+        marker.header.stamp     = rospy.Time.now()
+        marker.id               = (self.id + 1000)
+        marker.action           = Marker.DELETE
+        return marker
 
 class BBoxMatcher:
     def __init__(self, cost_thresh = _ASSOCIATION_MAX_COST):
@@ -169,7 +208,6 @@ class MultipleBBoxTracker:
         self.estimated_velo = {}
         self.matcher        = BBoxMatcher()
         self.update_trigger = 0
-        self.history        = {}
     
     def __from_obj_to_list(self, bounding_boxes : BoundingBoxArray) -> List[BoundingBox]:
         return bounding_boxes.boxes
@@ -213,28 +251,6 @@ class MultipleBBoxTracker:
                     self.estimated_velo[curbox.label] = [velX, velY, velZ]
                     if curbox.label == 1:
                         print("BBox Velocity: ", velX, velY, velZ)
-
-    def get_line_marker(self, bbox : BoundingBox):
-        line_marker = Marker()
-        line_marker.header.frame_id = 'rslidar'
-        line_marker.header.stamp = rospy.Time.now()
-        line_marker.action = Marker.ADD
-        line_marker.type = Marker.LINE_STRIP
-        line_marker.scale = Vector3(0.1, 0.1, 0.1)
-        line_marker.color = ColorRGBA(0.0, 1.0, 0.0, 1.0)
-        line_marker.id = (bbox.label + 1000)  # Add an offset to avoid conflicting with bbox markers
-        line_marker.lifetime = rospy.Duration(secs=0.1)
-        
-        # Get track history for the current bbox label
-        track_points = self.history.get(bbox.label, [])
-        track_points.append(bbox.pose.position)
-        self.history[bbox.label] = track_points
-        
-        # Add the track history points to the marker
-        for point in track_points:
-            line_marker.points.append(point)
-        
-        return line_marker
     
     def track(self, curr_boxes : List[BoundingBox]):
         # Create a copy of the tracks dictionary to avoid modifying it during iteration
@@ -251,31 +267,31 @@ class MultipleBBoxTracker:
         # Adding box id to the center of bbox
         marker_arr = MarkerArray()
 
-        # Creating line markers for track history
+        # Creating line markers for track path
         line_marker_arr = MarkerArray()
 
         # Cross-check track id's with current label id's
         for id, tracker in tracks_copy.items():
             if id in curr_ids:
-                tracker.predict()
-                tracker.update([box for box in curr_boxes if box.label == id][0])
-                tracker.age = 0
-                box_msg.boxes.append(tracker.get_state())
-                marker_arr.markers.append(self.get_marker(tracker.get_state()))
-                line_marker_arr.markers.append(self.get_line_marker(tracker.get_state()))
+                self.tracks[id].predict()
+                self.tracks[id].update([box for box in curr_boxes if box.label == id][0])
+                self.tracks[id].age = 0
+                box_msg.boxes.append(self.tracks[id].get_state())
+                marker_arr.markers.append(self.get_marker(self.tracks[id].get_state()))
+                line_marker_arr.markers.append(self.tracks[id].get_path())
             else:
                 # Remove track if label is not in current frame and track has reached max_age
-                if tracker.age > _TRACKING_MAX_AGE:
+                if self.tracks[id].age > _TRACKING_MAX_AGE:
                     print("Deleting track: ", id)
+                    line_marker_arr.markers.append(self.tracks[id].del_path())
+                    marker_arr.markers.append(self.del_marker(self.tracks[id].id))
                     del self.tracks[id]
-                    marker_arr.markers.append(self.del_marker(tracker.id))
-                    line_marker_arr.markers.append(self.del_marker(tracker.id + 1000))
                 else:
-                    tracker.age +=1
-                    tracker.predict()
-                    box_msg.boxes.append(tracker.get_state())
-                    marker_arr.markers.append(self.get_marker(tracker.get_state()))
-                    line_marker_arr.markers.append(self.get_line_marker(tracker.get_state()))
+                    self.tracks[id].age +=1
+                    self.tracks[id].predict()
+                    box_msg.boxes.append(self.tracks[id].get_state())
+                    marker_arr.markers.append(self.get_marker(self.tracks[id].get_state()))
+                    line_marker_arr.markers.append(self.tracks[id].get_path())
         # Check if its a new track
         for box in curr_boxes:
             if box.label not in self.tracks:
@@ -284,18 +300,10 @@ class MultipleBBoxTracker:
         
         print(f"Currently tracking {len(self.tracks)} boxes.")
 
-        # Clearing previous texts markers
-        #marker_delete= MarkerArray()
-        #marker = Marker()
-        #marker.id = 0
-        #marker.action = Marker.DELETEALL
-        #marker_delete.markers.append(marker)
-        #pub_id.publish(marker_delete)
-
-        # Publish tracks, ids and history
+        # Publish tracks, ids and path
         pub_tracked.publish(box_msg)
         pub_id.publish(marker_arr)
-        pub_history.publish(line_marker_arr)
+        pub_path.publish(line_marker_arr)
 
 
     def callback(self, bounding_boxes : BoundingBoxArray):
@@ -334,7 +342,7 @@ if __name__ == "__main__":
     mbboxtracker = MultipleBBoxTracker()
     rospy.Subscriber('/detections', BoundingBoxArray, mbboxtracker.callback)
     pub_bbox    = rospy.Publisher("/matched_bbox", BoundingBoxArray, queue_size=100)
-    pub_history = rospy.Publisher("/tracked_bbox_history", MarkerArray, queue_size=100)
+    pub_path    = rospy.Publisher("/tracked_bbox_path", MarkerArray, queue_size=100)
     pub_tracked = rospy.Publisher("/tracked_bbox", BoundingBoxArray, queue_size=100)
     pub_id      = rospy.Publisher("/tracked_bbox_id", MarkerArray, queue_size=100)
     rospy.spin()

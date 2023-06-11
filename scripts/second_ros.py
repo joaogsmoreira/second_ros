@@ -2,9 +2,13 @@
 
 import rospy
 from sensor_msgs.msg import PointCloud2
+from visualization_msgs.msg import Marker, MarkerArray
+from std_msgs.msg import ColorRGBA
+from geometry_msgs.msg import Vector3
 from pyquaternion import Quaternion
 import sensor_msgs.point_cloud2 as pc2
 from jsk_recognition_msgs.msg import BoundingBox, BoundingBoxArray
+import logging
 
 import sys
 import time
@@ -23,10 +27,32 @@ from second.utils import config_tool
 # we added the difference to both labeling and in the bounding box representation code (it might require manual tuning)
 _LIDAR_HEIGHT = 0.80
 
+class Logger:
+    def __init__(self, log_name : str) -> None:
+        self.log = logging.getLogger(log_name)
+        self.log.setLevel(logging.INFO)
+
+        # Create a file handler to write the log to a file
+        file_handler = logging.FileHandler("/home/johny/catkin_ws/time.log")
+        file_handler.setLevel(logging.INFO)
+
+        # Create a formatter to define the log message format
+        formatter = logging.Formatter("%(message)s")
+        file_handler.setFormatter(formatter)
+
+        # Add the file handler to the logger
+        self.log.addHandler(file_handler)
+    
+    def log_info(self, timestamp: int, fps: float) -> None:
+        self.log.info("%d %f", timestamp, fps)
+
+
 class Second_ROS:
     def __init__(self):
         config_path, ckpt_path = self.init_ros()
         self.init_second(config_path, ckpt_path)
+        self.logger = Logger("FPSLogger")
+        self.iteration = 0
 
     def init_second(self, config_path, ckpt_path):
         """ Initialize second model """
@@ -57,15 +83,16 @@ class Second_ROS:
     def init_ros(self):
         """ Initialize ros parameters """
 
-        self.sub_velo = rospy.Subscriber("/point_cloud", PointCloud2, self.lidar_callback, queue_size=1, buff_size=2**24)
-        self.pub_bbox = rospy.Publisher("/detections", BoundingBoxArray, queue_size=1)
-        self.pub_cloud = rospy.Publisher("/synced_cloud", PointCloud2, queue_size=1)
+        self.sub_velo   = rospy.Subscriber("/point_cloud", PointCloud2, self.lidar_callback, queue_size=1, buff_size=2**24)
+        self.pub_bbox   = rospy.Publisher("/detections", BoundingBoxArray, queue_size=1)
+        self.pub_cloud  = rospy.Publisher("/synced_cloud", PointCloud2, queue_size=1)
+        self.pub_marker = rospy.Publisher("/detections_score", MarkerArray, queue_size=100)
         
-        # Trained for all classes
+        # Trained for all classes on KITTI
         #config_path = rospy.get_param("/config_path", "/home/johny/catkin_ws/src/second_ros/config/all.fhd.config")
         #ckpt_path = rospy.get_param("/ckpt_path", "/home/johny/catkin_ws/src/second_ros/trained_models/voxelnet-99040.tckpt")
         
-        # Trained for pedestrians only
+        # Trained for pedestrians on custom dataset
         config_path = rospy.get_param("/config_path", "/home/johny/catkin_ws/src/second_ros/config/people.fhd.config")
         ckpt_path = rospy.get_param("/ckpt_path", "/home/johny/catkin_ws/src/second_ros/trained_custom_v2/voxelnet-55710.tckpt")
         
@@ -96,7 +123,20 @@ class Second_ROS:
 
         return boxes_lidar, scores, label
 
-
+    def get_score_marker(self, bbox : BoundingBox):
+        marker                  = Marker()
+        marker.header.frame_id  = 'rslidar'
+        marker.header.stamp     = rospy.Time.now()
+        marker.type             = Marker.TEXT_VIEW_FACING
+        marker.action           = Marker.ADD
+        marker.scale            = Vector3(0.5, 0.5, 0.5)
+        marker.color            = ColorRGBA(1.0, 1.0, 1.0, 1.0)
+        marker.id               = bbox.label
+        marker.text             = "score:" + str(bbox.value.round(decimals=2))
+        marker.pose.position.x  = bbox.pose.position.x
+        marker.pose.position.y  = bbox.pose.position.y
+        marker.pose.position.z  = bbox.pose.position.z + 1.4
+        return marker
 
     def lidar_callback(self, msg):
         """ Captures pointcloud data and feed into second model for inference """
@@ -119,10 +159,22 @@ class Second_ROS:
         boxes_lidar, scores, label = self.inference(cloud)
         toc = time.time()
         fps = 1/(toc-tic)
-        rospy.loginfo("FPS: %f", fps)
+        self.iteration += 1
+        
+        # Log the timestamp and FPS value
+        #self.logger.log_info(self.iteration, toc-tic)
 
         num_detections = len(boxes_lidar)
         arr_bbox = BoundingBoxArray()
+        arr_marker = MarkerArray()
+
+        # Clearing previous texts markers
+        marker_delete = MarkerArray()
+        marker = Marker()
+        marker.id = 0
+        marker.action = Marker.DELETEALL
+        marker_delete.markers.append(marker)
+        self.pub_marker.publish(marker_delete)
 
         for i in range(num_detections):
             #if label[i] != 2:               # Checking for pedestrian only
@@ -132,13 +184,13 @@ class Second_ROS:
             
             bbox = BoundingBox()
             bbox.header.frame_id = msg.header.frame_id
-            bbox.header.stamp = rospy.Time.now()
+            bbox.header.stamp    = rospy.Time.now()
             bbox.pose.position.x = float(boxes_lidar[i][0])
             bbox.pose.position.y = float(boxes_lidar[i][1])
             bbox.pose.position.z = float(boxes_lidar[i][2]) + float(boxes_lidar[i][5]) / 2 - _LIDAR_HEIGHT
-            bbox.dimensions.x = float(boxes_lidar[i][3])  # width
-            bbox.dimensions.y = float(boxes_lidar[i][4])  # length
-            bbox.dimensions.z = float(boxes_lidar[i][5])  # height
+            bbox.dimensions.x    = float(boxes_lidar[i][3])  # width
+            bbox.dimensions.y    = float(boxes_lidar[i][4])  # length
+            bbox.dimensions.z    = float(boxes_lidar[i][5])  # height
 
             q = Quaternion(axis=(0, 0, 1), radians=float(boxes_lidar[i][6]))
             bbox.pose.orientation.x = q.x
@@ -150,6 +202,7 @@ class Second_ROS:
             # the jsk bounding box variable "label" to represent the unique id of the bounding box
             bbox.label = i+1
             arr_bbox.boxes.append(bbox)
+            arr_marker.markers.append(self.get_score_marker(bbox))
             
             #rospy.loginfo("Label: %d\tScore: %f", label[i], scores[i])
         
@@ -159,11 +212,14 @@ class Second_ROS:
         # This way we garantee that the bounding box we're seeing is relative to the current point cloud we're seeing
         self.pub_cloud.publish(msg)
         self.pub_bbox.publish(arr_bbox)
+        self.pub_marker.publish(arr_marker)
 
 
 if __name__ == '__main__':
     sec = Second_ROS()
     rospy.init_node('second_ros_node')
+    # Configure the logging settings
+    logging.basicConfig(filename='fps_log.txt', level=logging.INFO, format='%(asctime)s %(message)s')
     try:
         rospy.spin()
     except KeyboardInterrupt:
