@@ -14,7 +14,7 @@ from filterpy.common import Q_discrete_white_noise
 _DETECTOR_STD_MEAS      = 0.1 # meters
 _DETECTOR_FREQUENCY     = 0.1 # seconds
 _DETECTOR_NOISE         = 0.01
-_ASSOCIATION_MAX_COST   = 1.0 # meters
+_ASSOCIATION_MAX_COST   = 1
 _ASSOCIATION_MAX_AGE    = 10  # frames
 _TRACKING_MAX_AGE       = 10  # frames
 

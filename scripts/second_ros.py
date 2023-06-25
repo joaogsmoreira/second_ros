@@ -33,7 +33,7 @@ class Logger:
         self.log.setLevel(logging.INFO)
 
         # Create a file handler to write the log to a file
-        file_handler = logging.FileHandler("/home/johny/catkin_ws/time.log")
+        file_handler = logging.FileHandler("/home/johny/catkin_ws/{}.log".format(log_name))
         file_handler.setLevel(logging.INFO)
 
         # Create a formatter to define the log message format
@@ -43,15 +43,16 @@ class Logger:
         # Add the file handler to the logger
         self.log.addHandler(file_handler)
     
-    def log_info(self, timestamp: int, fps: float) -> None:
-        self.log.info("%d %f", timestamp, fps)
+    def log_info(self, timestamp: int, value: float) -> None:
+        self.log.info("%d %f", timestamp, value)
 
 
 class Second_ROS:
     def __init__(self):
         config_path, ckpt_path = self.init_ros()
         self.init_second(config_path, ckpt_path)
-        self.logger = Logger("FPSLogger")
+        self.fps_logger = Logger("fps")
+        self.time_logger = Logger("time")
         self.iteration = 0
 
     def init_second(self, config_path, ckpt_path):
@@ -158,11 +159,14 @@ class Second_ROS:
         tic = time.time()
         boxes_lidar, scores, label = self.inference(cloud)
         toc = time.time()
-        fps = 1/(toc-tic)
+        time_metric = toc-tic
+        fps_metric = 1/time_metric
         self.iteration += 1
         
         # Log the timestamp and FPS value
-        #self.logger.log_info(self.iteration, toc-tic)
+        #self.fps_logger.log_info(self.iteration, fps_metric)
+        #self.time_logger.log_info(self.iteration, time_metric)
+
 
         num_detections = len(boxes_lidar)
         arr_bbox = BoundingBoxArray()
